@@ -6,9 +6,12 @@
 #include <linux/cdev.h>
 #include <linux/device.h>
 #include <linux/mutex.h>
+#include <linux/ioctl.h>
 
 #define DEVICE_NAME "mydevice"
 #define BUFFER_SIZE 1024
+#define WR_VALUE _IOW('a', 'a', int32_t *)
+#define RD_VALUE _IOR('a', 'b', int32_t *)
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jacob");
@@ -20,7 +23,9 @@ static struct class *my_class;
 static struct device *my_device;
 
 static char buffer[BUFFER_SIZE];
+int32_t kernel_value = 0;
 static DEFINE_MUTEX(my_mutex);
+
 
 
 
@@ -98,7 +103,37 @@ static ssize_t my_read(struct file *file,
     return bytes;
 }
 
+static long my_ioctl(struct file *file,
+                     unsigned int cmd,
+                     unsigned long arg)
+{
+    switch(cmd)
+    {
+        case WR_VALUE:
 
+            copy_from_user(&kernel_value,
+                           (int32_t*) arg,
+                           sizeof(kernel_value));
+
+            printk(KERN_INFO "IOCTL Write Value = %d\n",
+                   kernel_value);
+
+            break;
+
+        case RD_VALUE:
+
+            copy_to_user((int32_t*) arg,
+                         &kernel_value,
+                         sizeof(kernel_value));
+
+            printk(KERN_INFO "IOCTL Read Value = %d\n",
+                   kernel_value);
+
+            break;
+    }
+
+    return 0;
+}
 // file operations
 static struct file_operations fops =
 {
@@ -106,7 +141,8 @@ static struct file_operations fops =
     .open = my_open,
     .release = my_release,
     .write = my_write,
-    .read = my_read
+    .read = my_read,
+    .unlocked_ioctl = my_ioctl
 };
 
 
