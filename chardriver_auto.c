@@ -1,0 +1,127 @@
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/fs.h>
+#include <linux/uaccess.h>
+#include <linux/cdev.h>
+#include <linux/device.h>
+
+#define DEVICE_NAME "mydevice"
+#define BUFFER_SIZE 1024
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Jacob");
+MODULE_DESCRIPTION("Auto Character Device Driver");
+
+static dev_t dev_num;
+static struct cdev my_cdev;
+static struct class *my_class;
+static struct device *my_device;
+
+static char buffer[BUFFER_SIZE];
+
+
+// open
+static int my_open(struct inode *inode, struct file *file)
+{
+    printk(KERN_INFO "Device opened\n");
+    return 0;
+}
+
+
+// close
+static int my_release(struct inode *inode, struct file *file)
+{
+    printk(KERN_INFO "Device closed\n");
+    return 0;
+}
+
+
+// write
+static ssize_t my_write(struct file *file,
+                        const char __user *user_buffer,
+                        size_t len,
+                        loff_t *offset)
+{
+    if (len > BUFFER_SIZE)
+        len = BUFFER_SIZE;
+
+    if (copy_from_user(buffer, user_buffer, len))
+        return -EFAULT;
+
+    printk(KERN_INFO "Written: %s\n", buffer);
+
+    return len;
+}
+
+
+// read
+static ssize_t my_read(struct file *file,
+                       char __user *user_buffer,
+                       size_t len,
+                       loff_t *offset)
+{
+    int bytes = strlen(buffer);
+
+    if (*offset >= bytes)
+        return 0;
+
+    if (copy_to_user(user_buffer, buffer, bytes))
+        return -EFAULT;
+
+    *offset += bytes;
+
+    printk(KERN_INFO "Read done\n");
+
+    return bytes;
+}
+
+
+// file operations
+static struct file_operations fops =
+{
+    .owner = THIS_MODULE,
+    .open = my_open,
+    .release = my_release,
+    .write = my_write,
+    .read = my_read
+};
+
+
+// init
+static int __init my_init(void)
+{
+    alloc_chrdev_region(&dev_num, 0, 1, DEVICE_NAME);
+
+    cdev_init(&my_cdev, &fops);
+
+    cdev_add(&my_cdev, dev_num, 1);
+
+    my_class = class_create(THIS_MODULE, "my_class");
+
+    my_device = device_create(my_class, NULL, dev_num, NULL, DEVICE_NAME);
+
+    printk(KERN_INFO "Character driver loaded\n");
+
+    return 0;
+}
+
+
+// exit
+static void __exit my_exit(void)
+{
+    device_destroy(my_class, dev_num);
+
+    class_destroy(my_class);
+
+    cdev_del(&my_cdev);
+
+    unregister_chrdev_region(dev_num, 1);
+
+    printk(KERN_INFO "Character driver unloaded\n");
+}
+
+
+module_init(my_init);
+module_exit(my_exit);
+
