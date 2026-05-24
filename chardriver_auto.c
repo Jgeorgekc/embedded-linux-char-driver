@@ -5,6 +5,7 @@
 #include <linux/uaccess.h>
 #include <linux/cdev.h>
 #include <linux/device.h>
+#include <linux/mutex.h>
 
 #define DEVICE_NAME "mydevice"
 #define BUFFER_SIZE 1024
@@ -19,6 +20,8 @@ static struct class *my_class;
 static struct device *my_device;
 
 static char buffer[BUFFER_SIZE];
+static DEFINE_MUTEX(my_mutex);
+
 
 
 // open
@@ -43,13 +46,20 @@ static ssize_t my_write(struct file *file,
                         size_t len,
                         loff_t *offset)
 {
+    mutex_lock(&my_mutex);
+
     if (len > BUFFER_SIZE)
         len = BUFFER_SIZE;
 
     if (copy_from_user(buffer, user_buffer, len))
+    {
+        mutex_unlock(&my_mutex);
         return -EFAULT;
+    }
 
     printk(KERN_INFO "Written: %s\n", buffer);
+
+    mutex_unlock(&my_mutex);
 
     return len;
 }
@@ -61,17 +71,29 @@ static ssize_t my_read(struct file *file,
                        size_t len,
                        loff_t *offset)
 {
-    int bytes = strlen(buffer);
+    int bytes;
+
+    mutex_lock(&my_mutex);
+
+    bytes = strlen(buffer);
 
     if (*offset >= bytes)
+    {
+        mutex_unlock(&my_mutex);
         return 0;
+    }
 
     if (copy_to_user(user_buffer, buffer, bytes))
+    {
+        mutex_unlock(&my_mutex);
         return -EFAULT;
+    }
 
     *offset += bytes;
 
     printk(KERN_INFO "Read done\n");
+
+    mutex_unlock(&my_mutex);
 
     return bytes;
 }
@@ -91,6 +113,8 @@ static struct file_operations fops =
 // init
 static int __init my_init(void)
 {
+    mutex_init(&my_mutex);
+
     alloc_chrdev_region(&dev_num, 0, 1, DEVICE_NAME);
 
     cdev_init(&my_cdev, &fops);
@@ -110,6 +134,8 @@ static int __init my_init(void)
 // exit
 static void __exit my_exit(void)
 {
+    mutex_destroy(&my_mutex);
+
     device_destroy(my_class, dev_num);
 
     class_destroy(my_class);
