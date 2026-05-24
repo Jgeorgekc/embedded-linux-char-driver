@@ -9,6 +9,8 @@
 #include <linux/ioctl.h>
 #include <linux/wait.h>
 #include <linux/poll.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 
 
 
@@ -31,6 +33,8 @@ int32_t kernel_value = 0;
 static DEFINE_MUTEX(my_mutex);
 static wait_queue_head_t wait_queue;
 static int data_available = 0;
+static struct proc_dir_entry *proc_entry;
+
 
 
 
@@ -172,6 +176,39 @@ static __poll_t my_poll(struct file *file,
 
     return mask;
 }
+static int proc_show(struct seq_file *m, void *v)
+{
+    seq_printf(m,
+               "Character Driver Info\n");
+
+    seq_printf(m,
+               "Last Buffer: %s\n",
+               buffer);
+
+    seq_printf(m,
+               "Data Available: %d\n",
+               data_available);
+
+    seq_printf(m,
+               "Kernel Value: %d\n",
+               kernel_value);
+
+    return 0;
+}
+static int proc_open(struct inode *inode,
+                     struct file *file)
+{
+    return single_open(file,
+                       proc_show,
+                       NULL);
+}
+static const struct proc_ops proc_fops =
+{
+    .proc_open = proc_open,
+    .proc_read = seq_read,
+    .proc_lseek = seq_lseek,
+    .proc_release = single_release,
+};
 
 
 // file operations
@@ -195,6 +232,11 @@ static int __init my_init(void)
 
     init_waitqueue_head(&wait_queue);
 
+    proc_entry = proc_create("mydriver",
+                         0666,
+                         NULL,
+                         &proc_fops);
+
     alloc_chrdev_region(&dev_num, 0, 1, DEVICE_NAME);
 
     cdev_init(&my_cdev, &fops);
@@ -216,6 +258,8 @@ static void __exit my_exit(void)
 {
     mutex_destroy(&my_mutex);
 
+    proc_remove(proc_entry);
+    
     device_destroy(my_class, dev_num);
 
     class_destroy(my_class);
