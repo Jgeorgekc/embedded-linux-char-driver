@@ -7,6 +7,8 @@
 #include <linux/device.h>
 #include <linux/mutex.h>
 #include <linux/ioctl.h>
+#include <linux/wait.h>
+
 
 #define DEVICE_NAME "mydevice"
 #define BUFFER_SIZE 1024
@@ -25,6 +27,9 @@ static struct device *my_device;
 static char buffer[BUFFER_SIZE];
 int32_t kernel_value = 0;
 static DEFINE_MUTEX(my_mutex);
+static wait_queue_head_t wait_queue;
+static int data_available = 0;
+
 
 
 
@@ -64,6 +69,10 @@ static ssize_t my_write(struct file *file,
 
     printk(KERN_INFO "Written: %s\n", buffer);
 
+    data_available = 1;
+
+    wake_up_interruptible(&wait_queue);
+
     mutex_unlock(&my_mutex);
 
     return len;
@@ -77,6 +86,13 @@ static ssize_t my_read(struct file *file,
                        loff_t *offset)
 {
     int bytes;
+
+    printk(KERN_INFO "Reader going to sleep\n");
+
+    wait_event_interruptible(wait_queue,
+                             data_available != 0);
+
+    printk(KERN_INFO "Reader woke up\n");
 
     mutex_lock(&my_mutex);
 
@@ -95,6 +111,8 @@ static ssize_t my_read(struct file *file,
     }
 
     *offset += bytes;
+
+    data_available = 0;
 
     printk(KERN_INFO "Read done\n");
 
@@ -150,6 +168,8 @@ static struct file_operations fops =
 static int __init my_init(void)
 {
     mutex_init(&my_mutex);
+
+    init_waitqueue_head(&wait_queue);
 
     alloc_chrdev_region(&dev_num, 0, 1, DEVICE_NAME);
 
