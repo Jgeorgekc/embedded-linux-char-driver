@@ -8,6 +8,8 @@
 #include <linux/mutex.h>
 #include <linux/ioctl.h>
 #include <linux/wait.h>
+#include <linux/poll.h>
+
 
 
 #define DEVICE_NAME "mydevice"
@@ -152,6 +154,26 @@ static long my_ioctl(struct file *file,
 
     return 0;
 }
+
+static __poll_t my_poll(struct file *file,
+                        poll_table *wait)
+{
+    __poll_t mask = 0;
+
+    printk(KERN_INFO "Poll function called\n");
+
+
+    poll_wait(file, &wait_queue, wait);
+
+    if (data_available)
+    {
+        mask |= POLLIN | POLLRDNORM;
+    }
+
+    return mask;
+}
+
+
 // file operations
 static struct file_operations fops =
 {
@@ -160,7 +182,9 @@ static struct file_operations fops =
     .release = my_release,
     .write = my_write,
     .read = my_read,
-    .unlocked_ioctl = my_ioctl
+    .unlocked_ioctl = my_ioctl,
+    .poll = my_poll
+    
 };
 
 
